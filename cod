@@ -1,0 +1,176 @@
+using System;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Xml.Linq;
+
+namespace CurrencyConverter
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.OutputEncoding = Encoding.UTF8;
+
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.WriteLine("Введите команду ('valuta' - получить все котировки, 'datavaluta' - получить котировку для конкретной валюты и даты, 'convertvaluta' - конвертировать сумму из одной валюты в другую, 'exit' - выход):");
+                string command = Console.ReadLine().ToLower();
+
+                switch (command)
+                {
+                    case "valuta":
+                        GetAllCurrencyQuotes();
+                        break;
+                    case "datavaluta":
+                        GetSpecificCurrencyQuote();
+                        break;
+                    case "convertvaluta":
+                        ConvertCurrency();
+                        break;
+                    case "exit":
+                        exit = true;
+                        break;
+                    default:
+                        Console.WriteLine("Некорректная команда. Пожалуйста, повторите попытку.");
+                        break;
+                }
+            }
+        }
+
+        static void GetAllCurrencyQuotes()
+        {
+            string url = "http://www.cbr.ru/scripts/XML_daily.asp";
+
+            try
+            {
+                string xmlData = GetResponseFromUrl(url);
+                ParseAllCurrencyQuotes(xmlData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка при получении котировок: {ex.Message}");
+            }
+        }
+
+        static void ParseAllCurrencyQuotes(string xmlData)
+        {
+            XDocument xmlDoc = XDocument.Parse(xmlData);
+            var valuteElements = xmlDoc.Descendants("Valute");
+
+            foreach (var valuteElement in valuteElements)
+            {
+                string code = valuteElement.Element("CharCode")?.Value;
+                string name = valuteElement.Element("Name")?.Value;
+                string value = valuteElement.Element("Value")?.Value;
+
+                Console.WriteLine($"Код: {code}, Название: {name}, Значение: {value}");
+            }
+        }
+
+        static void GetSpecificCurrencyQuote()
+        {
+            Console.Write("Введите код валюты (например, USD): ");
+            string currencyCode = Console.ReadLine().ToUpper();
+
+            Console.Write("Введите дату в формате dd/MM/yyyy: ");
+            string dateStr = Console.ReadLine();
+
+            string url = $"http://www.cbr.ru/scripts/XML_daily.asp?date_req={dateStr}";
+
+            try
+            {
+                string xmlData = GetResponseFromUrl(url);
+                ParseSpecificCurrencyQuote(xmlData, currencyCode);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка при получении котировок: {ex.Message}");
+            }
+        }
+
+        static void ParseSpecificCurrencyQuote(string xmlData, string currencyCode)
+        {
+            XDocument xmlDoc = XDocument.Parse(xmlData);
+            var valuteElement = xmlDoc.Descendants("Valute").FirstOrDefault(e => e.Element("CharCode")?.Value == currencyCode);
+
+            if (valuteElement != null)
+            {
+                string value = valuteElement.Element("Value")?.Value;
+                Console.WriteLine($"Курс {currencyCode}: {value}");
+            }
+            else
+            {
+                Console.WriteLine("Котировка не найдена");
+            }
+        }
+
+        static void ConvertCurrency()
+        {
+            Console.Write("Введите сумму: ");
+            double amount = Convert.ToDouble(Console.ReadLine());
+
+            Console.Write("Введите исходную валюту: ");
+            string fromCurrency = Console.ReadLine().ToUpper();
+
+            Console.Write("Введите целевую валюту: ");
+            string toCurrency = Console.ReadLine().ToUpper();
+
+            Console.Write("Введите дату в формате dd/MM/yyyy: ");
+            string dateStr = Console.ReadLine();
+
+            string url = $"http://www.cbr.ru/scripts/XML_daily.asp?date_req={dateStr}";
+
+            try
+            {
+                string xmlData = GetResponseFromUrl(url);
+                double convertedAmount = CalculateConvertedAmount(xmlData, amount, fromCurrency, toCurrency);
+                Console.WriteLine($"{amount} {fromCurrency} = {convertedAmount} {toCurrency}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка при получении котировок: {ex.Message}");
+            }
+        }
+
+        static double CalculateConvertedAmount(string xmlData, double amount, string fromCurrency, string toCurrency)
+        {
+            XDocument xmlDoc = XDocument.Parse(xmlData);
+            var fromValuteElement = xmlDoc.Descendants("Valute").FirstOrDefault(e => e.Element("CharCode")?.Value == fromCurrency);
+            var toValuteElement = xmlDoc.Descendants("Valute").FirstOrDefault(e => e.Element("CharCode")?.Value == toCurrency);
+
+            if (fromValuteElement != null && toValuteElement != null)
+            {
+                string fromValueStr = fromValuteElement.Element("Value")?.Value;
+                string toValueStr = toValuteElement.Element("Value")?.Value;
+
+                if (double.TryParse(fromValueStr, out double fromValue) && double.TryParse(toValueStr, out double toValue))
+                {
+                    double convertedAmount = amount * (fromValue / toValue);
+                    return convertedAmount;
+                }
+            }
+
+            return 0;
+        }
+
+        static string GetResponseFromUrl(string url)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "GET";
+
+            using (WebResponse response = request.GetResponse())
+            {
+                using (Stream stream = response.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        return reader.ReadToEnd();
+                    }
+                }
+            }
+        }
+    }
+}
